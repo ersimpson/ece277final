@@ -1,0 +1,3 @@
+[console_scripts]
+ece277final = py_src.cli:entrypoint
+

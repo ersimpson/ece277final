@@ -1,0 +1,9 @@
+﻿  Building Custom Rule C:/Users/ersimpson.AD/OneDrive/ece277final/src/cuda_model/CMakeLists.txt
+  mnist_model.cpp
+C:\Users\ersimpson.AD\OneDrive\ece277final\src\cuda_model\mnist_model.cpp(9,8): warning C4244: 'initializing': conversion from 'const pybind11::ssize_t' to 'int', possible loss of data
+C:\Users\ersimpson.AD\OneDrive\ece277final\src\cuda_model\mnist_model.cpp(10,8): warning C4244: 'initializing': conversion from 'const pybind11::ssize_t' to 'int', possible loss of data
+     Creating library C:/Users/ersimpson.AD/OneDrive/ece277final/build/src/cuda_model/Debug/mnist_cpp_model.lib and object C:/Users/ersimpson.AD/OneDrive/ece277final/build/src/cuda_model/Debug/mnist_cpp_model.exp
+  Generating code
+  Not all modules are compiled with -Gy (function comdat), build without incremental LTCG.
+  Finished generating code
+  mnist_cpp_model.vcxproj -> C:\Users\ersimpson.AD\OneDrive\ece277final\build\src\cuda_model\Debug\mnist_cpp_model.pyd
