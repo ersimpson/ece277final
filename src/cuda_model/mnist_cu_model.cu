@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 #include <stdio.h>
+#include "mnist_model.h"
 
 __global__ void kernel_madd(int* A, int* B, int* C, int M, int N);
 
@@ -42,3 +43,6 @@ __global__ void kernel_madd(int* A, int* B, int* C, int M, int N)
 		C[idx] = A[idx] + B[idx];
 }
 
+void cu_madd(double* A, double* B, double* C, int m, int n)
+{
+}

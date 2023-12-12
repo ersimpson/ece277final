@@ -1,7 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
-
-extern void cu_madd(double *A, double *B, double *C, int m, int n);
+#include "mnist_model.h"
 
 namespace py = pybind11;
 
