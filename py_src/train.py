@@ -43,11 +43,11 @@ def run(
     train_dataloader = DataLoader(training_data, shuffle=False, batch_size=batch_size)
     test_dataloader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 
-    if not torch.cuda.is_available():
-        print("CUDA is not available. Exiting...")
-        sys.exit(1)
+    # if not torch.cuda.is_available():
+    #     print("CUDA is not available. Exiting...")
+    #     sys.exit(1)
     
-    device = torch.device("cuda") 
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu") 
     model = MNISTModel(case=case)
     model.to(device)
     loss_fn = CrossEntropyLoss()

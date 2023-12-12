@@ -20,12 +20,10 @@ include_directories(
 )
 
 
-
 file(GLOB HEADERS *.h *.cuh)
 source_group("Headers" FILES ${HEADERS})
 cuda_add_library(${BLOCK_NAME} MODULE
 	mnist_model.cpp
-	mnist_cu_model.cu
 OPTIONS --cudart=shared -DWITH_OPENGL -DOPTIMIZATION_STEP=0x0 -lineinfo -arch sm_52 -use_fast_math -maxrregcount 104
 DEBUG -Xptxas -v -g -G 
 )
