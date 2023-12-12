@@ -31,23 +31,23 @@ class MNISTModel(torch.nn.Module):
         super(MNISTModel, self).__init__()
         self.case = case
 
-        if self.case == 1:
-            self.relu = torch.nn.ReLU()
-            self.softmax = torch.nn.Softmax(dim=1)
-            self.pool = torch.nn.AvgPool2d(kernel_size=2, stride=2)
-            self.conv1 = torch.nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(3, 3), padding=1)
-            self.linear1 = torch.nn.Linear(in_features=64*14*14, out_features=128)
-            self.linear2 = torch.nn.Linear(in_features=128, out_features=10)
+        if self.case not in (1, 2):
+            raise NotImplementedError("Only case 1 & 2 are implemented")
 
-        elif self.case == 2:
+        self.relu = torch.nn.ReLU()
+        self.softmax = torch.nn.Softmax(dim=1)
+        self.pool = torch.nn.AvgPool2d(kernel_size=2, stride=2)
+        self.conv1 = torch.nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(3, 3), padding=1)
+        self.linear1 = torch.nn.Linear(in_features=64*14*14, out_features=128)
+        self.linear2 = torch.nn.Linear(in_features=128, out_features=10)
+
+        if self.case == 2:
             self.relu = MyReLU()
-            self.softmax = MySoftmax()
-            self.pool = MyAvgPool2d(kernel=(2, 2), stride=2)
-            self.conv1 = MyConv2D(in_channels=1, out_channels=64, kernel_size=(3, 3), stride=1, padding=1)
-            self.linear1 = MyLinear(input_features=64*14*14, output_features=128)
-            self.linear2 = MyLinear(input_features=128, output_features=10)
-
-        raise NotImplementedError("Only case 1 & 2 are implemented")
+            #self.softmax = MySoftmax()
+            #self.pool = MyAvgPool2d(kernel=(2, 2), stride=2)
+            #self.conv1 = MyConv2D(in_channels=1, out_channels=64, kernel_size=(3, 3), stride=1, padding=1)
+            #self.linear1 = MyLinear(input_features=64*14*14, output_features=128)
+            #self.linear2 = MyLinear(input_features=128, output_features=10)
 
     def forward(self, x: torch.Tensor):
         x = self.conv1(x)
@@ -64,8 +64,8 @@ class MNISTModel(torch.nn.Module):
 class MyConv2dFunction(torch.autograd.Function):
 
     @staticmethod
-    def forward(input: np.ndarray, kernel: np.ndarray, stride: int, padding: int):
-        return torch.tensor(conv2d(input, kernel, stride, padding))
+    def forward(input: torch.Tensor, kernel: torch.Tensor, stride: int, padding: int):
+        return mnist_cpp_model.conv_forward(input, kernel, stride, padding)
     
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -73,12 +73,9 @@ class MyConv2dFunction(torch.autograd.Function):
         ctx.save_for_backward(input, kernel, stride, padding)
 
     @staticmethod
-    def backward(ctx, grad_output: np.ndarray):
+    def backward(ctx, grad_output: torch.Tensor):
         input, kernel, stride, padding = ctx.saved_tensors
-        rotated_kernel = np.rot90(kernel, k=2)
-        grad_input = conv2d(rotated_kernel, grad_output, stride, padding)
-        grad_kernel = conv2d(input, grad_output, stride, padding)
-        return torch.tensor(grad_input), torch.tensor(grad_kernel)
+        return mnist_cpp_model.conv_backward(input, kernel, stride, padding, grad_output)
 
 
 class MyConv2D(torch.nn.Module):
@@ -95,16 +92,14 @@ class MyConv2D(torch.nn.Module):
         torch.nn.init.uniform_(self.kernel, -0.1, 0.1)
 
     def forward(self, input: torch.Tensor):
-        input = input.numpy()
-        kernel = self.kernel.numpy()
-        return MyConv2dFunction.apply(input, kernel, self.stride, self.padding)
+        return MyConv2dFunction.apply(input, self.kernel, self.stride, self.padding)
 
 
 class MyLinearFunction(torch.autograd.Function):
 
     @staticmethod
-    def forward(input: np.ndarray, weight: np.ndarray, bias: np.ndarray):
-        return torch.tensor(np.concatenate(input, 1) @ np.vstack((weight.T, bias.T)))
+    def forward(input: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor):
+        return mnist_cpp_model.linear_forward(input, weight, bias)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -113,11 +108,8 @@ class MyLinearFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output: np.ndarray):
-        input, weights, _ = ctx.saved_tensors
-        grad_input = grad_output @ weights
-        grad_weights = grad_output.T @ input
-        grad_bias = grad_output.sum(axis=0)
-        return torch.tensor(grad_input), torch.tensor(grad_weights), torch.tensor(grad_bias)
+        input, weights, bias = ctx.saved_tensors
+        return mnist_cpp_model.linear_backward(input, weights, bias, grad_output)
 
 
 class MyLinear(torch.nn.Module):
@@ -134,37 +126,42 @@ class MyLinear(torch.nn.Module):
         torch.nn.init.uniform_(self.bias, -0.1, 0.1)
 
     def forward(self, input: torch.Tensor):
-        input = input.numpy()
-        weight = self.weight.numpy()
-        bias = self.bias.numpy()
-        return MyLinearFunction.apply(input, weight, bias)
+        return MyLinearFunction.apply(input, self.weight, self.bias)
 
 
-class MyAvgPool2d(torch.autograd.Function):
-
-    @staticmethod
-    def forward(input: torch.Tensor, kernel: Tuple[int, int], stride: int):
-        input = input.numpy()
-        return torch.tensor(conv2d(input, np.ones(kernel), stride, 0, func=np.mean))
-
-    @staticmethod
-    def setup_context(ctx, inputs, output):
-        input, kernel, stride = inputs
-        ctx.save_for_backward(input, kernel, stride)
-
-    @staticmethod
-    def backward(ctx, grad_output: torch.Tensor):
-        grad_output = grad_output.numpy()
-        _, kernel, _ = ctx.saved_tensors
-        return torch.tensor((1 / kernel.numel()) * grad_output)
-
-
-class MySoftmax(torch.autograd.Function):
+class MyAvgPool2dFunction(torch.autograd.Function):
 
     @staticmethod
     def forward(input: torch.Tensor):
-        input = input.numpy()
-        return torch.tensor(softmax(input))
+        return mnist_cpp_model.avg_pool_forward(input)
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        input = inputs
+        ctx.save_for_backward(input)
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        input = ctx.saved_tensors
+        return mnist_cpp_model.d_avg_pool(input) * grad_output
+
+
+class MyAvgPool2d(torch.nn.Module):
+
+    def __init__(self, kernel: Tuple[int, int], stride: int):
+        super().__init__()
+        self.kernel = kernel
+        self.stride = stride
+
+    def forward(self, input: torch.Tensor):
+        return MyAvgPool2dFunction.apply(input)
+
+
+class MySoftmaxFunction(torch.autograd.Function):
+
+    @staticmethod
+    def forward(input: torch.Tensor):
+        return mnist_cpp_model.softmax(input)
     
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -172,65 +169,33 @@ class MySoftmax(torch.autograd.Function):
     
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
-        grad_output = grad_output.numpy()
         output = ctx.saved_tensors
-        return torch.tensor(np.multiply(grad_output, d_softmax(output)))
+        return mnist_cpp_model.d_softmax(output) * grad_output
     
 
-class MyReLU(torch.autograd.Function):
+class MySoftmax(torch.nn.Module):
+        
+        def forward(self, input: torch.Tensor):
+            return MySoftmaxFunction.apply(input)
+
+
+class MyReLUFunction(torch.autograd.Function):
 
     @staticmethod
     def forward(input: torch.Tensor):
-        input = input.numpy()
-        return torch.tensor(relu(input))
+        return mnist_cpp_model.relu(input)
 
     @staticmethod
-    def setup_context(ctx, inputs, output):
-        ctx.save_for_backward(inputs)
+    def setup_context(ctx, input, output):
+        ctx.save_for_backward(input)
     
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
-        grad_output = grad_output.numpy()
-        inputs = ctx.saved_tensors
-        return torch.tensor(np.multiply(grad_output, d_relu(inputs)))
-
-
-def softmax(z: np.ndarray) -> np.ndarray:
-    z = z - np.max(z, axis=0)
-    z_exp = np.exp(z)
-    return z_exp / np.sum(z_exp, axis=0)
+        input = ctx.saved_tensors
+        return mnist_cpp_model.d_relu(input) * grad_output
     
 
-def d_softmax(z: np.ndarray) -> np.ndarray:
-    grad = np.vstack(z * z.shape[0])
-    N, M = grad.shape
-    for i in range(N):
-        for j in range(M):
-            if i == j:
-                grad[i, j] = grad[i, j] * (1 - grad[i, j])
-            else:
-                grad[i, j] = -z[i] * grad[i, j]
-    return grad
-
-
-def relu(z: np.ndarray) -> np.ndarray:
-    return np.maximum(z, 0)
-
-
-def d_relu(z: np.ndarray) -> np.ndarray:
-    return np.where(z > 0, 1, 0)
-
-
-def conv2d(x: np.ndarray, k: np.ndarray, stride: int, padding: int, func = np.sum) -> np.ndarray:
-    N, H, W = x.shape
-    F, HH, WW = k.shape
-    H_out = (H + 2 * padding - HH) // stride + 1
-    W_out = (W + 2 * padding - WW) // stride + 1
-    out = np.zeros((N, F, H_out, W_out))
-    x_pad = np.pad(x, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode="constant", constant_values=0)
-    for n in range(N):
-        for f in range(F):
-            for i in range(H_out):
-                for j in range(W_out):
-                    out[n, f, i, j] = func(x_pad[n, :, i*stride:i*stride+HH, j*stride:j*stride+WW] * k[f, :])
-    return out
+class MyReLU(torch.nn.Module):
+    
+        def forward(self, input: torch.Tensor):
+            return MyReLUFunction.apply(input)
