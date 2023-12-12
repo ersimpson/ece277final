@@ -30,6 +30,7 @@ def set_seed(seed: int = 1):
 
 def run(
     data_path: str,
+    case: int = 1,
     epochs: int = 10,
     batch_size: int = 10,
     lr: float = 0.1,
@@ -51,7 +52,7 @@ def run(
     train_dataloader = DataLoader(training_data, shuffle=False, batch_size=batch_size)
     test_dataloader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 
-    model = TwoLayerNN(input_size=784, hidden_size=128, output_size=10)
+    model = TwoLayerNN(input_size=784, hidden_size=128, output_size=10, case=case)
     for epoch in range(epochs):
         epoch += 1
         timer = timeit()
@@ -86,6 +87,7 @@ class MNISTNumpyTransform:
 
 class TwoLayerNN:
     def __init__(self, input_size: int, hidden_size: int, output_size: int, case: int = 1):
+        self.case = case
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size
@@ -142,9 +144,9 @@ class TwoLayerNN:
         return np.sum(x, axis=axis, keepdims=True)
     
     def forward_pass(self, inputs: np.ndarray) -> np.ndarray:
-        z1 = self.mmadd(self.mm(inputs, self.w1), self.b1)
+        z1 = self.madd(self.mm(inputs, self.w1), self.b1)
         self.a1 = self.sigmoid(z1)
-        z2 = self.mmadd(self.mm(self.a1, self.w2), self.b2)
+        z2 = self.madd(self.mm(self.a1, self.w2), self.b2)
         self.out = self.softmax(z2)        
         return self.out
 

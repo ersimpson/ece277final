@@ -1,1 +1,1 @@
-extern void cu_madd(int* A, int* B, int* C, int M, int N);
+extern void cu_madd(double* A, double* B, double* C, int M, int N);
