@@ -1,96 +1,53 @@
-from pathlib import Path
-import typing as T
-import time
-from datetime import datetime
 import sys
-import py_src.mnist_cpp_model as mnist_cpp_model
+from pathlib import Path
+from typing import Any, Tuple
 
-import numpy as np
+CUSTOM_PYTORCH_ROOT_PATH = (Path(__file__).parent.parent / "build" / "src" / "cuda_model").absolute()
+CUSTOM_PYTORCH_DEBUG_PATH = (CUSTOM_PYTORCH_ROOT_PATH / "Debug").absolute()
+CUSTOM_PYTORCH_RELEASE_PATH = (CUSTOM_PYTORCH_ROOT_PATH / "Release").absolute()
+if CUSTOM_PYTORCH_DEBUG_PATH.exists() and CUSTOM_PYTORCH_DEBUG_PATH not in sys.path:
+    sys.path.append(str(CUSTOM_PYTORCH_DEBUG_PATH))
+if CUSTOM_PYTORCH_RELEASE_PATH.exists() and CUSTOM_PYTORCH_RELEASE_PATH not in sys.path:
+    sys.path.append(str(CUSTOM_PYTORCH_RELEASE_PATH))
+
 import torch
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
-from torch.optim import SGD
-from torch.nn import CrossEntropyLoss
+import numpy as np
 
-
-def set_seed(seed: int = 1):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-
-def run(
-    data_path: str,
-    epochs: int = 10,
-    batch_size: int = 10000,
-    lr: float = 0.1,
-    save_freq: int = 10,
-):
-    training_data = datasets.MNIST(
-        root=data_path,
-        train=True,
-        download=True,
-        transform=transforms.ToTensor(),
-    )
-    test_data = datasets.MNIST(
-        root=data_path,
-        train=False,
-        download=True,
-        transform=transforms.ToTensor(), 
-    )
-
-    train_dataloader = DataLoader(training_data, shuffle=False, batch_size=batch_size)
-    test_dataloader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
-
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    model = MNISTModel()
-    model.to(device)
-    loss_fn = CrossEntropyLoss()
-    optimizer = SGD(model.parameters(), lr=lr)
-
-    for epoch in range(epochs):
-        epoch += 1
-        timer = timeit()
-        with timer:
-            train(
-                device=device,
-                epoch=epoch,
-                loader=train_dataloader,
-                model=model,
-                loss_fn=loss_fn,
-                optimizer=optimizer,
-            )
-            validate(
-                device=device,
-                epoch=epoch,
-                loader=test_dataloader,
-                model=model,
-                loss_fn=loss_fn,
-            )
-        print(f"Epoch {epoch} took {timer.elapsed:.2f} seconds")
-
-        if epoch % save_freq == 0:
-            print(f"Saving checkpoint for epoch {epoch}...")
-            save_checkpoint(
-                epoch=epoch,
-                model=model,
-                optimizer=optimizer,
-            )
-            print(f"Checkpoint for epoch {epoch} saved.")
+try:
+    import mnist_cpp_model
+except ImportError:
+    print("Could not import mnist_cpp_model. Exiting...")
+    sys.exit(1)
 
 
 class MNISTModel(torch.nn.Module):
 
-    def __init__(self):
+    # case 1 - run model using PyTorch CUDA implementation
+    # case 2 - run model using PyTorch with C++ extensions
+    # case 3 - run model using PyTorch with C++/CUDA extensions
+    # case 4 - run model using PyTorch with C++/CUDA extensions and performance optimizations
+
+    def __init__(self, case: int = 1):
         super(MNISTModel, self).__init__()
+        self.case = case
 
-        self.relu = torch.nn.ReLU()
-        self.softmax = torch.nn.Softmax(dim=1)
-        self.pool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+        if self.case == 1:
+            self.relu = torch.nn.ReLU()
+            self.softmax = torch.nn.Softmax(dim=1)
+            self.pool = torch.nn.AvgPool2d(kernel_size=2, stride=2)
+            self.conv1 = torch.nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(3, 3), padding=1)
+            self.linear1 = torch.nn.Linear(in_features=64*14*14, out_features=128)
+            self.linear2 = torch.nn.Linear(in_features=128, out_features=10)
 
-        self.conv1 = torch.nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(3, 3), padding=1)
-        self.linear1 = torch.nn.Linear(in_features=64*14*14, out_features=128)
-        self.linear2 = torch.nn.Linear(in_features=128, out_features=10)
+        elif self.case == 2:
+            self.relu = MyReLU()
+            self.softmax = MySoftmax()
+            self.pool = MyAvgPool2d(kernel=(2, 2), stride=2)
+            self.conv1 = MyConv2D(in_channels=1, out_channels=64, kernel_size=(3, 3), stride=1, padding=1)
+            self.linear1 = MyLinear(input_features=64*14*14, output_features=128)
+            self.linear2 = MyLinear(input_features=128, output_features=10)
+
+        raise NotImplementedError("Only case 1 & 2 are implemented")
 
     def forward(self, x: torch.Tensor):
         x = self.conv1(x)
@@ -100,122 +57,180 @@ class MNISTModel(torch.nn.Module):
         x = self.linear1(x)
         x = self.relu(x)
         x = self.linear2(x)
-
-        x = mnist_cpp_model.softmax(x.detach().numpy())
-        print(x)
-
-        # x = self.softmax(x)
+        x = self.softmax(x)
         return x
 
 
-def train(
-    device: torch.device,
-    epoch: int,
-    loader: DataLoader,
-    model: MNISTModel,
-    loss_fn: T.Callable[[torch.Tensor], torch.Tensor],
-    optimizer: SGD,
-):
-    accuracies = Averager()
-    losses = Averager()
+class MyConv2dFunction(torch.autograd.Function):
 
-    model.train()
-    for _, (sample, label) in enumerate(loader):
-        sample: torch.Tensor = sample
-        sample = sample.to(device)
-        label: torch.Tensor = label
-        label = label.to(device)
-
-        output = model(sample)
-        loss: torch.Tensor = loss_fn(output, label)
-        
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        losses.update(loss.item(), sample.size(0))
-        accuracies.update(accuracy(output, label), sample.size(0))
-
-    print(
-        f"Epoch {epoch} => Avg Train Precision: {accuracies.avg:.4f}, "
-        + f"Avg Train Error: {1 - accuracies.avg:.4f}, Avg Train Loss: {losses.avg:.4f}"
-    )
-
-
-def validate(
-    device: torch.device,
-    epoch: int,
-    loader: DataLoader,
-    model: MNISTModel,
-    loss_fn: T.Callable[[torch.Tensor], torch.Tensor],
-):
-    accuracies = Averager()
-    losses = Averager()
-
-    model.eval()
-    for _, (sample, label) in enumerate(loader):
-        sample: torch.Tensor = sample
-        sample = sample.to(device)
-        label: torch.Tensor = label
-        label = label.to(device)
-
-        prediction: torch.Tensor = model(sample)
-        loss: torch.Tensor = loss_fn(prediction, label)
-
-        losses.update(loss.item(), sample.size(0))
-        accuracies.update(accuracy(prediction, label), sample.size(0))
-
-    print(
-        f"Epoch {epoch} => Avg Test Precision: {accuracies.avg:.4f}, "
-        + f"Avg Test Error: {1 - accuracies.avg:.4f}, Avg Test Loss: {losses.avg:.4f}"
-    )
-
-
-def accuracy(predicted: torch.Tensor, labels: torch.Tensor) -> float: 
-    _, predicted_labels = torch.max(predicted, 1)
-    correct_predictions = (predicted_labels == labels).sum().item()
-    total_samples = labels.size(0)
-    accuracy = correct_predictions / total_samples
-    return accuracy
-
-
-def save_checkpoint(
-    epoch: int,
-    model: MNISTModel,
-    optimizer: SGD,
-):
-    state = {
-        "epoch": epoch,
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict()
-    }
-    now = datetime.now().strftime("%Y%m%d-%H%M%S")
-    torch.save(state, f"checkpoint_{epoch}_{now}.pt")
-
-
-class timeit:
-
-    def __enter__(self):
-        self.start = time.time()
-
-    def __exit__(self, *args):
-        self.end = time.time()
-        self.elapsed = self.end - self.start
-
-
-class Averager(object):
+    @staticmethod
+    def forward(input: np.ndarray, kernel: np.ndarray, stride: int, padding: int):
+        return torch.tensor(conv2d(input, kernel, stride, padding))
     
-    def __init__(self):
-        self.reset()
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        input, kernel, stride, padding = inputs
+        ctx.save_for_backward(input, kernel, stride, padding)
 
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray):
+        input, kernel, stride, padding = ctx.saved_tensors
+        rotated_kernel = np.rot90(kernel, k=2)
+        grad_input = conv2d(rotated_kernel, grad_output, stride, padding)
+        grad_kernel = conv2d(input, grad_output, stride, padding)
+        return torch.tensor(grad_input), torch.tensor(grad_kernel)
 
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
+
+class MyConv2D(torch.nn.Module):
+
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: Tuple[int, int], stride: int, padding: int):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+
+        self.kernel = torch.nn.Parameter(torch.empty(out_channels, in_channels, kernel_size[0], kernel_size[1]))
+        torch.nn.init.uniform_(self.kernel, -0.1, 0.1)
+
+    def forward(self, input: torch.Tensor):
+        input = input.numpy()
+        kernel = self.kernel.numpy()
+        return MyConv2dFunction.apply(input, kernel, self.stride, self.padding)
+
+
+class MyLinearFunction(torch.autograd.Function):
+
+    @staticmethod
+    def forward(input: np.ndarray, weight: np.ndarray, bias: np.ndarray):
+        return torch.tensor(np.concatenate(input, 1) @ np.vstack((weight.T, bias.T)))
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        input, weight, bias = inputs
+        ctx.save_for_backward(input, weight, bias)
+
+    @staticmethod
+    def backward(ctx, grad_output: np.ndarray):
+        input, weights, _ = ctx.saved_tensors
+        grad_input = grad_output @ weights
+        grad_weights = grad_output.T @ input
+        grad_bias = grad_output.sum(axis=0)
+        return torch.tensor(grad_input), torch.tensor(grad_weights), torch.tensor(grad_bias)
+
+
+class MyLinear(torch.nn.Module):
+
+    def __init__(self, input_features, output_features):
+        super().__init__()
+        self.input_features = input_features
+        self.output_features = output_features
+
+        self.weight = torch.nn.Parameter(torch.empty(output_features, input_features))
+        self.bias = torch.nn.Parameter(torch.empty(output_features))
+
+        torch.nn.init.uniform_(self.weight, -0.1, 0.1)
+        torch.nn.init.uniform_(self.bias, -0.1, 0.1)
+
+    def forward(self, input: torch.Tensor):
+        input = input.numpy()
+        weight = self.weight.numpy()
+        bias = self.bias.numpy()
+        return MyLinearFunction.apply(input, weight, bias)
+
+
+class MyAvgPool2d(torch.autograd.Function):
+
+    @staticmethod
+    def forward(input: torch.Tensor, kernel: Tuple[int, int], stride: int):
+        input = input.numpy()
+        return torch.tensor(conv2d(input, np.ones(kernel), stride, 0, func=np.mean))
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        input, kernel, stride = inputs
+        ctx.save_for_backward(input, kernel, stride)
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        grad_output = grad_output.numpy()
+        _, kernel, _ = ctx.saved_tensors
+        return torch.tensor((1 / kernel.numel()) * grad_output)
+
+
+class MySoftmax(torch.autograd.Function):
+
+    @staticmethod
+    def forward(input: torch.Tensor):
+        input = input.numpy()
+        return torch.tensor(softmax(input))
+    
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        ctx.save_for_backward(output)
+    
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        grad_output = grad_output.numpy()
+        output = ctx.saved_tensors
+        return torch.tensor(np.multiply(grad_output, d_softmax(output)))
+    
+
+class MyReLU(torch.autograd.Function):
+
+    @staticmethod
+    def forward(input: torch.Tensor):
+        input = input.numpy()
+        return torch.tensor(relu(input))
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        ctx.save_for_backward(inputs)
+    
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        grad_output = grad_output.numpy()
+        inputs = ctx.saved_tensors
+        return torch.tensor(np.multiply(grad_output, d_relu(inputs)))
+
+
+def softmax(z: np.ndarray) -> np.ndarray:
+    z = z - np.max(z, axis=0)
+    z_exp = np.exp(z)
+    return z_exp / np.sum(z_exp, axis=0)
+    
+
+def d_softmax(z: np.ndarray) -> np.ndarray:
+    grad = np.vstack(z * z.shape[0])
+    N, M = grad.shape
+    for i in range(N):
+        for j in range(M):
+            if i == j:
+                grad[i, j] = grad[i, j] * (1 - grad[i, j])
+            else:
+                grad[i, j] = -z[i] * grad[i, j]
+    return grad
+
+
+def relu(z: np.ndarray) -> np.ndarray:
+    return np.maximum(z, 0)
+
+
+def d_relu(z: np.ndarray) -> np.ndarray:
+    return np.where(z > 0, 1, 0)
+
+
+def conv2d(x: np.ndarray, k: np.ndarray, stride: int, padding: int, func = np.sum) -> np.ndarray:
+    N, H, W = x.shape
+    F, HH, WW = k.shape
+    H_out = (H + 2 * padding - HH) // stride + 1
+    W_out = (W + 2 * padding - WW) // stride + 1
+    out = np.zeros((N, F, H_out, W_out))
+    x_pad = np.pad(x, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode="constant", constant_values=0)
+    for n in range(N):
+        for f in range(F):
+            for i in range(H_out):
+                for j in range(W_out):
+                    out[n, f, i, j] = func(x_pad[n, :, i*stride:i*stride+HH, j*stride:j*stride+WW] * k[f, :])
+    return out
