@@ -43,6 +43,7 @@ set(CUDA_TOOLKIT_SAMPLES_DIR ${CUDA_TOOLKIT_ROOT_DIR}/samples)
 set(CUDA_TOOLKIT_ROOT_DIR ${CUDA_TOOLKIT_ROOT_DIR})
 endif(WINDOWS)
 
+find_package(Torch REQUIRED)
 find_package(PythonInterp 3.6 REQUIRED)
 find_package(PythonLibs   3.6 REQUIRED)
 find_package(pybind11 REQUIRED)
