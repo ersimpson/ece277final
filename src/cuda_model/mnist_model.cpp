@@ -1,74 +1,35 @@
 #include <pybind11/pybind11.h>
-#include <ATen/ATen.h>
-#include <stdio.h>
-#include <helper_functions.h>
-#include <helper_cuda.h>
+#include <pybind11/numpy.h>
+
+extern void cu_madd(double *A, double *B, double *C, int m, int n);
 
 namespace py = pybind11;
 
-__global__ void convolution2d_kernel(
-    const float* input,
-    const float* weights,
-    float* output,
-    int input_height,
-    int input_width,
-    int output_height,
-    int output_width,
-    int kernel_size
-) {
-    // Compute output indices
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+py::array_t<double> madd(py::array_t<double> x, py::array_t<double> y) {
+    auto buf1 = x.request();
+    auto buf2 = y.request();
 
-    if (row < output_height && col < output_width) {
-        float sum = 0.0f;
+    if (buf1.ndim != 2 || buf2.ndim != 2)
+        throw std::runtime_error("Number of dimensions must be two");
 
-        // Compute the convolution operation
-        for (int i = 0; i < kernel_size; ++i) {
-            for (int j = 0; j < kernel_size; ++j) {
-                int input_row = row + i;
-                int input_col = col + j;
-                sum += input[input_row * input_width + input_col] *
-                       weights[i * kernel_size + j];
-            }
-        }
+    if (buf1.size != buf2.size)
+        throw std::runtime_error("Input arrays must match");
 
-        output[row * output_width + col] = sum;
-    }
+    int M = buf1.shape[0];
+    int N = buf1.shape[1];
+    auto out = py::array_t<double>(buf1.size);
+    auto buf3 = out.request();
+
+    double *A = (double *) buf1.ptr;
+    double *B = (double *) buf2.ptr;
+    double *C = (double *) buf3.ptr;
+
+    cu_madd(A, B, C, M, N);
+
+    return out;
 }
 
-at::Tensor relu(at::Tensor x) {
-    return at::relu(x);
-}
-
-at::Tensor d_relu(at::Tensor x) {
-    return at::where(x > 0, at::ones_like(x), at::zeros_like(x));
-}
-
-at::Tensor softmax(at::Tensor x) {
-    return at::softmax(x, 1);
-}
-
-at::Tensor d_softmax(at::Tensor x) {
-    return at::softmax(x, 1) * (1 - at::softmax(x, 1));
-}
-
-at::Tensor linear_forward(at::Tensor x, at::Tensor w, at::Tensor b) {
-    return at::addmm(b, x, w.t());
-}
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor> linear_backward(at::Tensor x, at::Tensor w, at::Tensor b, at::Tensor d_out) {
-    auto d_x = at::mm(d_out, w);
-    auto d_w = at::mm(d_out.t(), x);
-    auto d_b = d_out.sum(0);
-    return std::make_tuple(d_x, d_w, d_b);
-}
 
 PYBIND11_MODULE(mnist_cpp_model, m) {
-    m.def("relu", &relu, "ReLU activation function");
-    m.def("d_relu", &d_relu, "ReLU derivative function");
-    m.def("softmax", &softmax, "Softmax activation function");
-    m.def("d_softmax", &d_softmax, "Softmax derivative function");
-    m.def("linear_forward", &linear_forward, "Linear forward function");
-    m.def("linear_backward", &linear_backward, "Linear backward function");
+    m.def("madd", &madd, "Add two matrices");
 }

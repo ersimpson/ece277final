@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
-from typing import Any, Tuple
+import typing as T
+import time
+
 
 CUSTOM_PYTORCH_ROOT_PATH = (Path(__file__).parent.parent / "build" / "src" / "cuda_model").absolute()
 CUSTOM_PYTORCH_DEBUG_PATH = (CUSTOM_PYTORCH_ROOT_PATH / "Debug").absolute()
@@ -12,6 +14,8 @@ if CUSTOM_PYTORCH_RELEASE_PATH.exists() and CUSTOM_PYTORCH_RELEASE_PATH not in s
 
 import torch
 import numpy as np
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
 
 try:
     import mnist_cpp_model
@@ -20,113 +24,248 @@ except ImportError:
     sys.exit(1)
 
 
-class MNISTModel(torch.nn.Module):
+def set_seed(seed: int = 1):
+    np.random.seed(seed)
 
-    # case 1 - run model using PyTorch CUDA implementation
-    # case 2 - run model using PyTorch with C++ extensions
-    # case 3 - run model using PyTorch with C++/CUDA extensions
-    # case 4 - run model using PyTorch with C++/CUDA extensions and performance optimizations
 
-    def __init__(self, case: int = 1):
-        super(MNISTModel, self).__init__()
-        self.case = case
+def run(
+    data_path: str,
+    epochs: int = 10,
+    batch_size: int = 10,
+    lr: float = 0.1,
+    batches: T.Optional[int] = None,
+):
+    training_data = datasets.MNIST(
+        root=data_path,
+        train=True,
+        download=True,
+        transform=MNISTNumpyTransform(),
+    )
+    test_data = datasets.MNIST(
+        root=data_path,
+        train=False,
+        download=True,
+        transform=MNISTNumpyTransform(), 
+    )
 
-        if self.case not in (1, 2, 3):
-            raise NotImplementedError("Only case 1 & 2 are implemented")
+    train_dataloader = DataLoader(training_data, shuffle=False, batch_size=batch_size)
+    test_dataloader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 
-        self.relu = torch.nn.ReLU()
-        self.softmax = torch.nn.Softmax(dim=1)
-        self.linear1 = torch.nn.Linear(in_features=784, out_features=128)
-        self.linear2 = torch.nn.Linear(in_features=128, out_features=10)
+    model = TwoLayerNN(input_size=784, hidden_size=128, output_size=10)
+    for epoch in range(epochs):
+        epoch += 1
+        timer = timeit()
+        with timer:
+            train(
+                loader=train_dataloader,
+                epoch=epoch,
+                model=model,
+                lr=lr,
+                batches=batches,
+            )
+            validate(
+                loader=test_dataloader,
+                epoch=epoch,
+                model=model,
+                lr=lr,
+                batches=batches,
+            )
+        print(f"Epoch {epoch} took {timer.elapsed:.2f} seconds")
 
+
+
+
+class MNISTNumpyTransform:
+    
+    def __call__(self, sample):
+        sample = transforms.ToTensor()(sample)
+        sample: np.ndarray = sample.numpy()
+        sample = sample.reshape(-1, 28*28)
+        return sample
+
+
+class TwoLayerNN:
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, case: int = 1):
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+
+        self.w1 = self.init_weights(self.input_size, self.hidden_size)
+        self.b1 = self.init_bias(self.hidden_size)
+        self.w2 = self.init_weights(self.hidden_size, self.output_size)
+        self.b2 = self.init_bias(self.output_size)
+
+    def init_weights(self, in_size: int, out_size: int) -> np.ndarray:
+        #if self.case == 2:
+        #    return mnist_cpp_model.init_weights(in_size, out_size)
+        return np.random.randn(in_size, out_size) * 0.01
+
+    def init_bias(self, size: int) -> np.ndarray:
+        #if self.case == 2:
+        #    return mnist_cpp_model.init_bias(size)
+        return np.zeros((1, size))
+
+    def sigmoid(self, x: np.ndarray) -> np.ndarray:
+        #if self.case == 2:
+        #    return mnist_cpp_model.sigmoid(x)
+        return 1 / (1 + np.exp(-x))
+
+    def softmax(self, x: np.ndarray) -> np.ndarray:
+        #if self.case == 2:
+        #    return mnist_cpp_model.softmax(x)
+        x = np.exp(x - np.max(x, axis=1, keepdims=True))
+        return x / np.sum(x, axis=1, keepdims=True)
+
+    def mm(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        #if self.case == 2:
+        #    return mnist_cpp_model.mm(x, y)
+        return np.dot(x, y)
+    
+    def madd(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         if self.case == 2:
-            self.relu = MyReLU()
-            self.softmax = MySoftmax()
-            #self.linear1 = MyLinear(input_features=64*14*14, output_features=128)
-            #self.linear2 = MyLinear(input_features=128, output_features=10)
-
-    def forward(self, x: torch.Tensor):
-        x = x.view(-1, 784)
-        x = self.linear3(x)
-        x = self.relu(x)
-        x = self.linear2(x)
-        x = self.softmax(x)
-        return x
-
-
-class MyLinearFunction(torch.autograd.Function):
-
-    @staticmethod
-    def forward(input: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor):
-        return mnist_cpp_model.linear_forward(input, weight, bias)
-
-    @staticmethod
-    def setup_context(ctx, inputs, output):
-        input, weight, bias = inputs
-        ctx.save_for_backward(input, weight, bias)
-
-    @staticmethod
-    def backward(ctx, grad_output: np.ndarray):
-        input, weights, bias = ctx.saved_tensors
-        return mnist_cpp_model.linear_backward(input, weights, bias, grad_output)
-
-
-class MyLinear(torch.nn.Module):
-
-    def __init__(self, input_features, output_features):
-        super().__init__()
-        self.input_features = input_features
-        self.output_features = output_features
-
-        self.weight = torch.nn.Parameter(torch.empty(output_features, input_features))
-        self.bias = torch.nn.Parameter(torch.empty(output_features))
-
-        torch.nn.init.uniform_(self.weight, -0.1, 0.1)
-        torch.nn.init.uniform_(self.bias, -0.1, 0.1)
-
-    def forward(self, input: torch.Tensor):
-        return MyLinearFunction.apply(input, self.weight, self.bias)
-
-
-class MySoftmaxFunction(torch.autograd.Function):
-
-    @staticmethod
-    def forward(input: torch.Tensor):
-        return mnist_cpp_model.softmax(input)
+            return mnist_cpp_model.madd(x, y)
+        return x + y
     
-    @staticmethod
-    def setup_context(ctx, inputs, output):
-        ctx.save_for_backward(output)
+    def mt(self, x: np.ndarray) -> np.ndarray:
+        #if self.case == 2:
+        #    return mnist_cpp_model.mt(x)
+        return x.T
     
-    @staticmethod
-    def backward(ctx, grad_output: torch.Tensor):
-        output = ctx.saved_tensors
-        return mnist_cpp_model.d_softmax(output) * grad_output
+    def mmelem(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        #if self.case == 2:
+        #    return mnist_cpp_model.mmelem(x, y)
+        return x * y
     
-
-class MySoftmax(torch.nn.Module):
-        
-        def forward(self, input: torch.Tensor):
-            return MySoftmaxFunction.apply(input)
-
-
-class MyReLUFunction(torch.autograd.Function):
-
-    @staticmethod
-    def forward(input: torch.Tensor):
-        return mnist_cpp_model.relu(input)
-
-    @staticmethod
-    def setup_context(ctx, input, output):
-        ctx.save_for_backward(input)
+    def mmreduce(self, x: np.ndarray, axis: int = 0) -> np.ndarray:
+        #if self.case == 2:
+        #    return mnist_cpp_model.mmreduce(x, axis)
+        return np.sum(x, axis=axis, keepdims=True)
     
-    @staticmethod
-    def backward(ctx, grad_output: torch.Tensor):
-        input = ctx.saved_tensors
-        return mnist_cpp_model.d_relu(input) * grad_output
-    
+    def forward_pass(self, inputs: np.ndarray) -> np.ndarray:
+        z1 = self.mmadd(self.mm(inputs, self.w1), self.b1)
+        self.a1 = self.sigmoid(z1)
+        z2 = self.mmadd(self.mm(self.a1, self.w2), self.b2)
+        self.out = self.softmax(z2)        
+        return self.out
 
-class MyReLU(torch.nn.Module):
+    def backward_pass(self, inputs: np.ndarray, targets: np.ndarray, lr: float):
+        N, _ = inputs.shape
+        l2_delta = (self.out - targets) / N
+
+        grad_w2 = self.mm(self.mt(self.a1), l2_delta)
+        grad_b2 = self.mmreduce(l2_delta)
+
+        d_sigmoid = self.mmelem(self.a1, 1 - self.a1)
+        l1_delta = self.mmelem(self.mm(l2_delta, self.mt(self.w2)), d_sigmoid) 
+        grad_w1 = self.mm(self.mt(inputs), l1_delta)
+        grad_b1 = self.mmreduce(l1_delta)
+
+        self.w1 -= lr * grad_w1
+        self.b1 -= lr * grad_b1
+        self.w2 -= lr * grad_w2
+        self.b2 -= lr * grad_b2
+
+
+def train(
+    loader: DataLoader,
+    epoch: int,
+    model: TwoLayerNN,
+    lr: float,
+    batches: T.Optional[int] = None,
+    validate: bool = False,
+):
+    accuracies = Averager()
+    losses = Averager()
+
+    for batch, (inputs, targets) in enumerate(loader):
+        inputs = reshape_inputs_to_numpy(inputs)
+        targets = reshape_targets_to_numpy(targets)
+
+        outputs = model.forward_pass(inputs)
+        if not validate:
+            model.backward_pass(inputs, targets, lr)
+        loss = loss_fn(targets, outputs)
+
+        accuracies.update(accuracy(outputs, targets), outputs.shape[0])
+        losses.update(loss, outputs.shape[0])
+
+        if batches is None:
+            continue
+        if batch+1 >= batches:
+            break
     
-        def forward(self, input: torch.Tensor):
-            return MyReLUFunction.apply(input)
+    train_mode = "Train" if not validate else "Validation"
+    print(
+        f"Epoch {epoch} => Avg {train_mode} Precision: {accuracies.avg:.4f}, "
+        + f"Avg {train_mode} Error: {1 - accuracies.avg:.4f}, Avg {train_mode} Loss: {losses.avg:.4f}"
+    )
+
+
+def validate(
+    loader: DataLoader,
+    epoch: int,
+    model: TwoLayerNN,
+    lr: float,
+    batches: T.Optional[int] = None,
+):
+    train(
+        loader=loader,
+        epoch=epoch,
+        model=model,
+        lr=lr,
+        batches=batches,
+        validate=True,
+    )
+
+
+def reshape_inputs_to_numpy(tensor: torch.Tensor) -> np.ndarray:
+    v: np.ndarray = tensor.numpy()
+    N, _, M = v.shape
+    return v.reshape(N, M)
+
+
+def reshape_targets_to_numpy(tensor: torch.Tensor, C: int = 10) -> np.ndarray:
+    v: np.ndarray = tensor.numpy()
+    N = v.size
+    one_hot = np.eye(C)[v.tolist(), :].reshape(N, C)
+    return one_hot
+
+
+def loss_fn(targets: np.ndarray, outputs: np.ndarray) -> float:
+    N, _ = outputs.shape
+    return -np.sum(targets * np.log(outputs + 1e-8)) / N
+
+
+def accuracy(outputs: np.ndarray, targets: np.ndarray) -> float:
+    N, _ = outputs.shape
+    digits = np.argmax(outputs, axis=1).reshape(N, 1)
+    targets = np.argmax(targets, axis=1).reshape(N, 1)
+    return np.mean(digits == targets)
+
+
+class timeit:
+
+    def __enter__(self):
+        self.start = time.time()
+
+    def __exit__(self, *args):
+        self.end = time.time()
+        self.elapsed = self.end - self.start
+
+
+class Averager(object):
+    
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
