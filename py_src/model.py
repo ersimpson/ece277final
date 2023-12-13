@@ -98,23 +98,15 @@ class TwoLayerNN:
         self.b2 = self.init_bias(self.output_size)
 
     def init_weights(self, in_size: int, out_size: int) -> np.ndarray:
-        #if self.case == 2:
-        #    return mnist_cpp_model.init_weights(in_size, out_size)
         return np.random.randn(in_size, out_size) * 0.01
 
     def init_bias(self, size: int) -> np.ndarray:
-        #if self.case == 2:
-        #    return mnist_cpp_model.init_bias(size)
         return np.zeros((1, size))
 
     def sigmoid(self, x: np.ndarray) -> np.ndarray:
-        #if self.case == 2:
-        #    return mnist_cpp_model.sigmoid(x)
         return 1 / (1 + np.exp(-x))
 
     def softmax(self, x: np.ndarray) -> np.ndarray:
-        #if self.case == 2:
-        #    return mnist_cpp_model.softmax(x)
         x = np.exp(x - np.max(x, axis=1, keepdims=True))
         return x / np.sum(x, axis=1, keepdims=True)
 
@@ -135,8 +127,8 @@ class TwoLayerNN:
         return x.T
     
     def mmelem(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        #if self.case == 2:
-        #    return mnist_cpp_model.mmelem(x, y)
+        if self.case == 2:
+            return mnist_cpp_model.mmelem(x, y)
         return x * y
     
     def mmreduce(self, x: np.ndarray, axis: int = 0) -> np.ndarray:
