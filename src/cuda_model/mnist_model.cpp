@@ -14,7 +14,7 @@ py::array_t<float> madd(py::array_t<float> x, py::array_t<float> y) {
 
     if (buf1.size != buf2.size) {
         printf("buf1 => %d, %d\n", buf1.shape[0], buf1.shape[1]);
-        printf("buf2 => %d, %d", buf2.shape[0], buf2.shape[1]);
+        printf("buf2 => %d, %d\n", buf2.shape[0], buf2.shape[1]);
         throw std::runtime_error("Input arrays must match");
     }
 
@@ -36,12 +36,15 @@ py::array_t<float> mmelem(py::array_t<float> x, py::array_t<float> y) {
     auto buf1 = x.request();
     auto buf2 = y.request();
 
-    if (buf1.ndim != 2 || buf2.ndim != 2)
+    if (buf1.ndim != 2 || buf2.ndim != 2) {
+        printf("buf1 => %d\n", buf1.ndim);
+        printf("buf2 => %d\n", buf2.ndim);
         throw std::runtime_error("Number of dimensions must be two");
+    }
 
     if (buf1.size != buf2.size) {
         printf("buf1 => %d, %d\n", buf1.shape[0], buf1.shape[1]);
-        printf("buf2 => %d, %d", buf2.shape[0], buf2.shape[1]);
+        printf("buf2 => %d, %d\n", buf2.shape[0], buf2.shape[1]);
         throw std::runtime_error("Input arrays must match");
     }
 
@@ -61,5 +64,5 @@ py::array_t<float> mmelem(py::array_t<float> x, py::array_t<float> y) {
 
 PYBIND11_MODULE(mnist_cpp_model, m) {
     m.def("madd", &madd, "Add two matrices");
-    m.def("mmelem", &madd, "Multiply two matrices element-wise");
+    m.def("mmelem", &mmelem, "Multiply two matrices element-wise");
 }

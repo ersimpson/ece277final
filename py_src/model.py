@@ -128,7 +128,8 @@ class TwoLayerNN:
     
     def mmelem(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         if self.case == 2:
-            return mnist_cpp_model.mmelem(x, y)
+            N, M = x.shape
+            return mnist_cpp_model.mmelem(x, y).reshape(N, M)
         return x * y
     
     def mmreduce(self, x: np.ndarray, axis: int = 0) -> np.ndarray:

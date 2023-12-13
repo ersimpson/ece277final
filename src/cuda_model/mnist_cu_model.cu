@@ -54,7 +54,7 @@ void cu_mmelem(float* A, float* B, float* C, int M, int N)
 	cudaMemcpy(d_a, A, size, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_b, B, size, cudaMemcpyHostToDevice);
 
-	kernel_madd << < grid, blk >> > (d_a, d_b, d_c, M, N);
+	kernel_mmelem << < grid, blk >> > (d_a, d_b, d_c, M, N);
 
 	cudaMemcpy(C, d_c, size, cudaMemcpyDeviceToHost);
 
