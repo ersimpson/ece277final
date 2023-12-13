@@ -73,8 +73,6 @@ def run(
         print(f"Epoch {epoch} took {timer.elapsed:.2f} seconds")
 
 
-
-
 class MNISTNumpyTransform:
     
     def __call__(self, sample):

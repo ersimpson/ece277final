@@ -128,8 +128,8 @@ void cu_mt(float* A, float* B, int M, int N)
 	blk.x = 16; blk.y = 16;
 
 	dim3 grid;
-	grid.x = (M_b + blk.x - 1) / blk.x;
-	grid.y = (N_a + blk.y - 1) / blk.y;
+	grid.x = (M + blk.x - 1) / blk.x;
+	grid.y = (N + blk.y - 1) / blk.y;
 
 	int size = sizeof(float)*M*N;
 
@@ -200,6 +200,11 @@ __global__ void kernel_mt(float* A, float* B, int M, int N)
 	iy = threadIdx.y + blockIdx.y * blockDim.y;
 	ti = iy * M + ix;
 	
+	if (iy < N && ix < M)
+	{
+		tile[threadIdx.y][threadIdx.x] = A[ti]; // load to shared memory
+	}
+	
 	unsigned int bidx, irow, icol;
 	bidx = threadIdx.y * blockDim.x + threadIdx.x;
 	irow = bidx / blockDim.y;
@@ -208,10 +213,9 @@ __global__ void kernel_mt(float* A, float* B, int M, int N)
 	ix = blockIdx.y * blockDim.y + icol;
 	iy = blockIdx.x * blockDim.x + irow;
 	to = iy * N + ix;
+	__syncthreads();
 
-	if (ix < M && iy < N) {
-		tile[irow][icol] = A[ti]; // load to shared memory
-		__syncthreads();
-		B[to] = tile[icol][irow];
+	if (iy < M && ix < N) {
+		B[to] = tile[icol][irow]; // load back to global memory
 	}
 }
