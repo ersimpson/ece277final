@@ -125,7 +125,8 @@ class TwoLayerNN:
     
     def madd(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         if self.case == 2:
-            return mnist_cpp_model.madd(x, y)
+            N, M = x.shape
+            return mnist_cpp_model.madd(x, y).reshape(N, M)
         return x + y
     
     def mt(self, x: np.ndarray) -> np.ndarray:
@@ -144,9 +145,13 @@ class TwoLayerNN:
         return np.sum(x, axis=axis, keepdims=True)
     
     def forward_pass(self, inputs: np.ndarray) -> np.ndarray:
-        z1 = self.madd(self.mm(inputs, self.w1), self.b1)
+        N, _ = inputs.shape
+        b1 = np.vstack((N * [self.b1]))
+        z1 = self.madd(self.mm(inputs, self.w1), b1)
         self.a1 = self.sigmoid(z1)
-        z2 = self.madd(self.mm(self.a1, self.w2), self.b2)
+        N, _ = self.a1.shape
+        b2 = np.vstack((N * [self.b2]))
+        z2 = self.madd(self.mm(self.a1, self.w2), b2)
         self.out = self.softmax(z2)        
         return self.out
 

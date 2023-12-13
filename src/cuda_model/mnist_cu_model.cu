@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include "mnist_model.h"
 
-__global__ void kernel_madd(double* A, double* B, double* C, int M, int N);
+__global__ void kernel_madd(float* A, float* B, float* C, int M, int N);
 
-void cu_madd(double* A, double* B, double* C, int M, int N)
+void cu_madd(float* A, float* B, float* C, int M, int N)
 {
-	double *d_a, *d_b, *d_c;
+	float *d_a, *d_b, *d_c;
 
 	dim3 blk;
 	blk.x = 16; blk.y = 16;
@@ -33,7 +33,7 @@ void cu_madd(double* A, double* B, double* C, int M, int N)
 	cudaFree(d_c);
 }
 
-__global__ void kernel_madd(double* A, double* B, double* C, int M, int N)
+__global__ void kernel_madd(float* A, float* B, float* C, int M, int N)
 {
 	unsigned int ix = threadIdx.x + blockIdx.x * blockDim.x;
 	unsigned int iy = threadIdx.y + blockIdx.y * blockDim.y;
