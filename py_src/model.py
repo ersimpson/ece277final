@@ -111,8 +111,10 @@ class TwoLayerNN:
         return x / np.sum(x, axis=1, keepdims=True)
 
     def mm(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        #if self.case == 2:
-        #    return mnist_cpp_model.mm(x, y)
+        if self.case == 2:
+            N, _ = x.shape
+            _, M = y.shape
+            return mnist_cpp_model.mm(x, y).reshape(N, M)
         return np.dot(x, y)
     
     def madd(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:

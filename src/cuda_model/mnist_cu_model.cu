@@ -5,6 +5,7 @@
 __global__ void kernel_madd(float* A, float* B, float* C, int M, int N);
 __global__ void kernel_mmelem(float* A, float* B, float* C, int M, int N);
 __global__ void kernel_mmreduce(float* A, float* B, int M, int N);
+__global__ void kernel_mm(float *A, float *B, float *C, int N_a, int M_a, int M_b);
 
 void cu_madd(float* A, float* B, float* C, int M, int N)
 {
@@ -86,6 +87,37 @@ void cu_mmreduce(float* A, float* B, int M, int N)
 	cudaFree(d_b);
 }
 
+void cu_mm(float* A, float* B, float* C, int N_a, int M_a, int M_b)
+{
+	float *d_a, *d_b, *d_c;
+
+	dim3 blk;
+	blk.x = 16; blk.y = 16;
+
+	dim3 grid;
+	grid.x = (M_b + blk.x - 1) / blk.x;
+	grid.y = (N_a + blk.y - 1) / blk.y;
+
+	int sizeA = sizeof(float)*M_a*N_a;
+    int sizeB = sizeof(float)*M_b*M_a;
+    int sizeC = sizeof(float)*N_a*M_b
+
+	cudaMalloc((void **)&d_a, sizeA);
+	cudaMalloc((void **)&d_b, sizeB);
+	cudaMalloc((void **)&d_c, sizeC);
+
+	cudaMemcpy(d_a, A, sizeA, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_b, B, sizeB, cudaMemcpyHostToDevice);
+
+	kernel_mmelem << < grid, blk >> > (d_a, d_b, d_c, N_a, M_a, M_b);
+
+	cudaMemcpy(C, d_c, size, cudaMemcpyDeviceToHost);
+
+	cudaFree(d_a);
+	cudaFree(d_b);
+	cudaFree(d_c);
+}
+
 __global__ void kernel_madd(float* A, float* B, float* C, int M, int N)
 {
 	unsigned int ix = threadIdx.x + blockIdx.x * blockDim.x;
@@ -115,4 +147,17 @@ __global__ void kernel_mmreduce(float* A, float* B, int M, int N)
         sum += A[i * M + ix];
     }
 	B[ix] = sum;
+}
+
+__global__ void kernel_mm(float *A, float *B, float *C, int N_a, int M_a, int M_b) {
+	unsigned int ix = threadIdx.x + blockIdx.x * blockDim.x;
+	unsigned int iy = threadIdx.y + blockIdx.y * blockDim.y;
+
+    if (ix < M_b && iy < N_a) {
+        float sum = 0;
+        for (int i = 0; i < M_a; ++i) {
+            sum += A[iy * M_a + i] * B[i * M_b + ix];
+        }
+        C[iy * M_b + ix] = sum;
+    }
 }
