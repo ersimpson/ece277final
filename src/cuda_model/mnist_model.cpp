@@ -112,7 +112,7 @@ py::array_t<float> mm(py::array_t<float> x, py::array_t<float> y) {
     float *B = (float *) buf2.ptr;
     float *C = (float *) buf3.ptr;
 
-    cu_mmelem(A, B, C, N_a, M_a, M_b);
+    cu_mm(A, B, C, N_a, M_a, M_b);
 
     return out;
 }
