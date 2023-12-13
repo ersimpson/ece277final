@@ -117,9 +117,31 @@ py::array_t<float> mm(py::array_t<float> x, py::array_t<float> y) {
     return out;
 }
 
+py::array_t<float> mt(py::array_t<float> x) {
+    auto buf1 = x.request();
+
+    if (buf1.ndim != 2) {
+        printf("buf1 => %d\n", buf1.ndim);
+        throw std::runtime_error("Number of dimensions must be two");
+    }
+
+    int N = buf1.shape[0];
+    int M = buf1.shape[1];
+    auto out = py::array_t<float>(buf1.size);
+    auto buf2 = out.request();
+
+    float *A = (float *) buf1.ptr;
+    float *B = (float *) buf2.ptr;
+    
+    cu_mt(A, B, M, N);
+
+    return out;
+}
+
 PYBIND11_MODULE(mnist_cpp_model, m) {
     m.def("madd", &madd, "Add two matrices");
     m.def("mmelem", &mmelem, "Multiply two matrices element-wise");
     m.def("mmreduce", &mmreduce, "Sum columns in a N x M matrix to produce a 1 x M matrix");
     m.def("mm", &mm, "Matrix multiplication");
+    m.def("mt", &mt, "Transpose a matrix");
 }

@@ -5,7 +5,9 @@
 __global__ void kernel_madd(float* A, float* B, float* C, int M, int N);
 __global__ void kernel_mmelem(float* A, float* B, float* C, int M, int N);
 __global__ void kernel_mmreduce(float* A, float* B, int M, int N);
-__global__ void kernel_mm(float *A, float *B, float *C, int N_a, int M_a, int M_b);
+__global__ void kernel_mm(float* A, float* B, float* C, int N_a, int M_a, int M_b);
+__global__ void kernel_mt(float* A, float* B, int M, int N);
+
 
 void cu_madd(float* A, float* B, float* C, int M, int N)
 {
@@ -92,7 +94,7 @@ void cu_mm(float* A, float* B, float* C, int N_a, int M_a, int M_b)
 	float *d_a, *d_b, *d_c;
 
 	dim3 blk;
-	blk.x = 32; blk.y = 32;
+	blk.x = 16; blk.y = 16;
 
 	dim3 grid;
 	grid.x = (M_b + blk.x - 1) / blk.x;
@@ -116,6 +118,32 @@ void cu_mm(float* A, float* B, float* C, int N_a, int M_a, int M_b)
 	cudaFree(d_a);
 	cudaFree(d_b);
 	cudaFree(d_c);
+}
+
+void cu_mt(float* A, float* B, int M, int N)
+{
+	float *d_a, *d_b;
+
+	dim3 blk;
+	blk.x = 16; blk.y = 16;
+
+	dim3 grid;
+	grid.x = (M_b + blk.x - 1) / blk.x;
+	grid.y = (N_a + blk.y - 1) / blk.y;
+
+	int size = sizeof(float)*M*N;
+
+	cudaMalloc((void **)&d_a, size);
+	cudaMalloc((void **)&d_b, size);
+	
+	cudaMemcpy(d_a, A, size, cudaMemcpyHostToDevice);
+
+	kernel_mt << < grid, blk >> > (d_a, d_b, M, N);
+
+	cudaMemcpy(B, d_b, size, cudaMemcpyDeviceToHost);
+
+	cudaFree(d_a);
+	cudaFree(d_b);
 }
 
 __global__ void kernel_madd(float* A, float* B, float* C, int M, int N)
@@ -159,5 +187,31 @@ __global__ void kernel_mm(float *A, float *B, float *C, int N_a, int M_a, int M_
 		for (int i = 0; i < M_a; i++)
 			sum += A[iy * M_a + i] * B[i * M_b + ix];
 		C[iy * M_b + ix] = sum;
+	}
+}
+
+__global__ void kernel_mt(float* A, float* B, int M, int N)
+{
+	__shared__ float tile[16][16];
+
+	// Coordinates of original matrix
+	unsigned int ix, iy, ti, to;
+	ix = threadIdx.x + blockIdx.x * blockDim.x;
+	iy = threadIdx.y + blockIdx.y * blockDim.y;
+	ti = iy * M + ix;
+	
+	unsigned int bidx, irow, icol;
+	bidx = threadIdx.y * blockDim.x + threadIdx.x;
+	irow = bidx / blockDim.y;
+	icol = bidx % blockDim.y;
+	// Coordinates of transposed matrix
+	ix = blockIdx.y * blockDim.y + icol;
+	iy = blockIdx.x * blockDim.x + irow;
+	to = iy * N + ix;
+
+	if (ix < M && iy < N) {
+		tile[irow][icol] = A[ti]; // load to shared memory
+		__syncthreads();
+		B[to] = tile[icol][irow];
 	}
 }

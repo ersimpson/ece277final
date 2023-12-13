@@ -3,7 +3,6 @@ from pathlib import Path
 import typing as T
 import time
 
-
 CUSTOM_PYTORCH_ROOT_PATH = (Path(__file__).parent.parent / "build" / "src" / "cuda_model").absolute()
 CUSTOM_PYTORCH_DEBUG_PATH = (CUSTOM_PYTORCH_ROOT_PATH / "Debug").absolute()
 CUSTOM_PYTORCH_RELEASE_PATH = (CUSTOM_PYTORCH_ROOT_PATH / "Release").absolute()
@@ -111,10 +110,10 @@ class TwoLayerNN:
         return x / np.sum(x, axis=1, keepdims=True)
 
     def mm(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        if self.case == 2:
-            N, _ = x.shape
-            _, M = y.shape
-            return mnist_cpp_model.mm(x, y).reshape(N, M)
+        #if self.case == 2:
+        #    N, _ = x.shape
+        #    _, M = y.shape
+        #    return mnist_cpp_model.mm(x, y).reshape(N, M)
         return np.dot(x, y)
     
     def madd(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -124,8 +123,9 @@ class TwoLayerNN:
         return x + y
     
     def mt(self, x: np.ndarray) -> np.ndarray:
-        #if self.case == 2:
-        #    return mnist_cpp_model.mt(x)
+        if self.case == 2:
+            N, M = x.shape
+            return mnist_cpp_model.mt(x).reshape(M, N)
         return x.T
     
     def mmelem(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
