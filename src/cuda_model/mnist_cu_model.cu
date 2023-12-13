@@ -66,15 +66,15 @@ void cu_mmelem(float* A, float* B, float* C, int M, int N)
 
 void cu_mmreduce(float* A, float* B, int M, int N)
 {
-	float *d_a, *d_b, *d_c;
+	float *d_a, *d_b;
 
 	int blk = 256;
     int grid = (M + blk - 1) / blk;
 	int sizeA = sizeof(float)*M*N;
     int sizeB = sizeof(float)*M;
 
-	cudaMalloc((void **)&d_a, size);
-	cudaMalloc((void **)&d_b, size);
+	cudaMalloc((void **)&d_a, sizeA);
+	cudaMalloc((void **)&d_b, sizeB);
 
 	cudaMemcpy(d_a, A, sizeA, cudaMemcpyHostToDevice);
 
@@ -110,9 +110,9 @@ __global__ void kernel_mmreduce(float* A, float* B, int M, int N)
 {
 	unsigned int ix = threadIdx.x + blockIdx.x * blockDim.x;
 
-	if (ix < M) {
-        for (int i = 0; i < N; i++) {
-            B[ix] += A[i * M + ix];
-        }
+	float sum = 0;
+    for (int i = 0; i < N; i++) {
+        sum += A[i * M + ix];
     }
+	B[ix] = sum;
 }
