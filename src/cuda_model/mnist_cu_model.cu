@@ -4,6 +4,7 @@
 
 __global__ void kernel_madd(float* A, float* B, float* C, int M, int N);
 __global__ void kernel_mmelem(float* A, float* B, float* C, int M, int N);
+__global__ void kernel_mmreduce(float* A, float* B, int M, int N);
 
 void cu_madd(float* A, float* B, float* C, int M, int N)
 {
@@ -63,6 +64,28 @@ void cu_mmelem(float* A, float* B, float* C, int M, int N)
 	cudaFree(d_c);
 }
 
+void cu_mmreduce(float* A, float* B, int M, int N)
+{
+	float *d_a, *d_b, *d_c;
+
+	int blk = 256;
+    int grid = (M + blk - 1) / blk;
+	int sizeA = sizeof(float)*M*N;
+    int sizeB = sizeof(float)*M;
+
+	cudaMalloc((void **)&d_a, size);
+	cudaMalloc((void **)&d_b, size);
+
+	cudaMemcpy(d_a, A, sizeA, cudaMemcpyHostToDevice);
+
+	kernel_mmreduce << < grid, blk >> > (d_a, d_b, M, N);
+
+	cudaMemcpy(A, d_b, sizeB, cudaMemcpyDeviceToHost);
+
+	cudaFree(d_a);
+	cudaFree(d_b);
+}
+
 __global__ void kernel_madd(float* A, float* B, float* C, int M, int N)
 {
 	unsigned int ix = threadIdx.x + blockIdx.x * blockDim.x;
@@ -81,4 +104,15 @@ __global__ void kernel_mmelem(float* A, float* B, float* C, int M, int N)
 
 	if (ix < M && iy < N)
 		C[idx] = A[idx] * B[idx];
+}
+
+__global__ void kernel_mmreduce(float* A, float* B, int M, int N)
+{
+	unsigned int ix = threadIdx.x + blockIdx.x * blockDim.x;
+
+	if (ix < M) {
+        for (int i = 0; i < N; i++) {
+            B[ix] += A[i * M + ix];
+        }
+    }
 }

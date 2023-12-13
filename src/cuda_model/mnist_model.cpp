@@ -9,8 +9,11 @@ py::array_t<float> madd(py::array_t<float> x, py::array_t<float> y) {
     auto buf1 = x.request();
     auto buf2 = y.request();
 
-    if (buf1.ndim != 2 || buf2.ndim != 2)
+    if (buf1.ndim != 2 || buf2.ndim != 2){
+        printf("buf1 => %d\n", buf1.ndim);
+        printf("buf2 => %d\n", buf2.ndim);
         throw std::runtime_error("Number of dimensions must be two");
+    }
 
     if (buf1.size != buf2.size) {
         printf("buf1 => %d, %d\n", buf1.shape[0], buf1.shape[1]);
@@ -62,7 +65,30 @@ py::array_t<float> mmelem(py::array_t<float> x, py::array_t<float> y) {
     return out;
 }
 
+py::array_t<float> mmreduce(py::array_t<float> x) {
+    auto buf1 = x.request();
+
+    if (buf1.ndim != 2) {
+        printf("buf1 => %d\n", buf1.ndim);
+        throw std::runtime_error("Number of dimensions must be two");
+    }
+
+    int M = buf1.shape[1];
+    int N = buf1.shape[0];
+    auto out = py::array_t<float>(M);
+    auto buf2 = out.request();
+
+    float *A = (float *) buf1.ptr;
+    float *B = (float *) buf2.ptr;
+    
+    cu_mmreduce(A, B, M, N);
+
+    return out;
+}
+
+
 PYBIND11_MODULE(mnist_cpp_model, m) {
     m.def("madd", &madd, "Add two matrices");
     m.def("mmelem", &mmelem, "Multiply two matrices element-wise");
+    m.def("mmreduce", &mmreduce, "Sum columns in a N x M matrix to produce a 1 x M matrix");
 }

@@ -132,10 +132,11 @@ class TwoLayerNN:
             return mnist_cpp_model.mmelem(x, y).reshape(N, M)
         return x * y
     
-    def mmreduce(self, x: np.ndarray, axis: int = 0) -> np.ndarray:
-        #if self.case == 2:
-        #    return mnist_cpp_model.mmreduce(x, axis)
-        return np.sum(x, axis=axis, keepdims=True)
+    def mmreduce(self, x: np.ndarray) -> np.ndarray:
+        if self.case == 2:
+            _, M = x.shape
+            return mnist_cpp_model.mmreduce(x).reshape(1, M)
+        return np.sum(x, axis=0, keepdims=True)
     
     def forward_pass(self, inputs: np.ndarray) -> np.ndarray:
         N, _ = inputs.shape
