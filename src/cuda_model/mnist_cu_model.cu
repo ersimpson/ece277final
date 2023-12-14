@@ -182,12 +182,13 @@ __global__ void kernel_mm(float *A, float *B, float *C, int N_a, int M_a, int M_
 	unsigned int ix = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int iy = blockIdx.y * blockDim.y + threadIdx.y;
 
-	if (ix < M_b && iy < N_a) {
-		float sum = 0.0f;
-		for (int i = 0; i < M_a; i++)
-			sum += A[iy * M_a + i] * B[i * M_b + ix];
-		C[iy * M_b + ix] = sum;
-	}
+	if (iy >= N_a || ix >= M_b)
+		return;
+
+	float sum = 0.0f;
+	for (int i = 0; i < M_a; i++)
+		sum += A[iy * M_a + i] * B[i * M_b + ix];
+	C[iy * M_b + ix] = sum;
 }
 
 __global__ void kernel_mt(float* A, float* B, int M, int N)

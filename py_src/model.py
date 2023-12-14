@@ -15,6 +15,7 @@ import torch
 import numpy as np
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
+from scipy.special import expit
 
 try:
     import mnist_cpp_model
@@ -101,17 +102,17 @@ class TwoLayerNN:
         return np.zeros((1, size))
 
     def sigmoid(self, x: np.ndarray) -> np.ndarray:
-        return 1 / (1 + np.exp(-x))
+        return expit(x)
 
     def softmax(self, x: np.ndarray) -> np.ndarray:
         x = np.exp(x - np.max(x, axis=1, keepdims=True))
         return x / np.sum(x, axis=1, keepdims=True)
 
     def mm(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        #if self.case == 2:
-        #    N, _ = x.shape
-        #    _, M = y.shape
-        #    return mnist_cpp_model.mm(x, y).reshape(N, M)
+        if self.case == 2:
+            N, _ = x.shape
+            _, M = y.shape
+            return mnist_cpp_model.mm(x, y).reshape(N, M)
         return np.dot(x, y)
     
     def madd(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
