@@ -171,9 +171,9 @@ __global__ void kernel_mmreduce(float* A, float* B, int M, int N)
 	unsigned int ix = threadIdx.x + blockIdx.x * blockDim.x;
 
 	float sum = 0.0f;
-    for (int i = 0; i < N; i++) {
+	for (int i = 0; i < N; i++) {
         sum += A[i * M + ix];
-    }
+	}
 	B[ix] = sum;
 }
 
